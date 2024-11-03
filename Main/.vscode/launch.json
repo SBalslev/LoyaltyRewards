@@ -5,10 +5,10 @@
             "request": "snapshotInitialize",
             "type": "al",
             "environmentType": "Sandbox",
-            "environmentName": "Directions",
+            "environmentName": "Sandbox",
             "sessionId": 5544,
             "executionContext": "DebugAndProfile",
-            "tenant": "ffa32acf-5c71-4055-a4fe-6ad1d3526060",
+            "tenant": "bf4ab6d6-cd93-424e-91fa-afe03fa286ac",
             "breakOnNext": "WebClient"
         },
         {
@@ -16,19 +16,19 @@
             "request": "attach",
             "type": "al",
             "environmentType": "Sandbox",
-            "environmentName": "Directions",
+            "environmentName": "Sandbox",
             "sessionId": 32702,
             "breakOnNext": "WebClient",
             "breakOnError": "ExcludeTry",
-            "tenant": "35d73e7b-74c1-4b32-8b63-241fb858afe8"
+            "tenant": "bf4ab6d6-cd93-424e-91fa-afe03fa286ac"
         },
         {
             "name": "AL: Generated Download Symbols request",
             "request": "launch",
             "type": "al",
             "environmentType": "Sandbox",
-            "environmentName": "Directions",
-            "tenant": "35d73e7b-74c1-4b32-8b63-241fb858afe8"
+            "environmentName": "Sandbox",
+            "tenant": "bf4ab6d6-cd93-424e-91fa-afe03fa286ac"
         }
     ]
 }
