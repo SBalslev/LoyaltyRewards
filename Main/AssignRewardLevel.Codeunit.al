@@ -20,8 +20,8 @@ codeunit 50100 AssignRewardLevel
 
         // Reschedule the job if not allowed to run this day
         Date := Today();
-        if DisAllowedDays.Contains(Date.DayOfWeek()) then
-            ReSchedueleJob(Date);
+//        if DisAllowedDays.Contains(Date.DayOfWeek()) then
+//            ReSchedueleJob(Date);
 
         // Update the Reward table with external rewards. Doesn't use the Customer
         ImportExternalRewards();

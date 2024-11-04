@@ -13,7 +13,7 @@
     "dependencies": [],
     "screenshots": [],
     "platform": "1.0.0.0",
-    "application": "25.0.0.0",
+    "application": "24.5.0.0",
     "idRanges": [
         {
             "from": 50100,
@@ -28,7 +28,7 @@
     "features": [
         "NoImplicitWith"
     ],
-    "runtime": "14.0",
+    "runtime": "13.0",
     "source": {
         "repositoryUrl": "https://github.com/SBalslev/LoyaltyRewards",
         "commit": "bd13cbcd64bcbc8cb661ca4fa56d1d7ff8acbd6d"
