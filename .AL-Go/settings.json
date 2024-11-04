@@ -2,5 +2,5 @@
   "country": "us",
   "appFolders": ["main"],
   "testFolders": [],
-  "bcptTestFolders": ["LoyaltyRewards.PerformanceTest"]
+  "bcptTestFolders": []
 }
