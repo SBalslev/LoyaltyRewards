@@ -4,7 +4,6 @@ codeunit 50100 AssignRewardLevel
     var
     // declare your variables
     begin
-        DisAllowedDays.Add(7);
         AssignRewardLevelToCustomers();
     end;
 
@@ -19,9 +18,7 @@ codeunit 50100 AssignRewardLevel
         Customer.LockTable();
 
         // Reschedule the job if not allowed to run this day
-        Date := Today();
-        if DisAllowedDays.Contains(Date.DayOfWeek()) then
-            ReSchedueleJob(Date);
+        RescheduleJobIfNotAllowed();
 
         // Update the Reward table with external rewards. Doesn't use the Customer
         ImportExternalRewards();
@@ -36,6 +33,19 @@ codeunit 50100 AssignRewardLevel
                 Customer.Modify();
             until Customer.Next() = 0;
         end;
+    end;
+
+    procedure RescheduleJobIfNotAllowed();
+    var
+        Date: Date;
+    begin
+        // Retrieve which days are not allowed to run the job from an external source.
+        RetrieveDisAllowedDays(DisAllowedDays);
+
+        // Reschedule the job if today is not allowed
+        Date := Today();
+        if DisAllowedDays.Contains(Date.DayOfWeek()) then
+            ReSchedueleJob(Date);
     end;
 
     procedure GetCustomerRewardLevel(Customer: Record Customer): Code[30];
@@ -75,7 +85,13 @@ codeunit 50100 AssignRewardLevel
 
     procedure ProcessCustomer()
     begin
-        Sleep(10);
+        Sleep(2000);
+    end;
+
+    procedure RetrieveDisAllowedDays(var DisAllowedDays: List of [Integer])
+    begin
+        DisAllowedDays.Add(0);
+        DisAllowedDays.Add(6);
     end;
 
     procedure ImportExternalRewards()
