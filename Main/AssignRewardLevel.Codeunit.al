@@ -14,11 +14,6 @@ codeunit 50100 AssignRewardLevel
         LatestRewardLevel: Code[30];
         Date: Date;
     begin
-        // Lock the customer table for modification. This is important to prevent conflicts with other processes,
-        // specially so that other processes don't modify the customer records while we're updating
-        // the reward level, so that's why we lock the whole table and not just the record when modifying.
-        Customer.LockTable();
-
         // Reschedule the job if not allowed to run this day. This is because it's quite a heavy job
         // that and might interfere with other processes if run on certain days.
         RescheduleJobIfNotAllowed();
@@ -29,6 +24,8 @@ codeunit 50100 AssignRewardLevel
         // Loop through all customers to update their reward level
         if Customer.FindSet() then begin
             repeat
+                // Lock the customer record for modification
+                Customer.LockTable();
                 // Do some clean up before processing the customer
                 ProcessCustomer();
                 // Get and assign the reward level to the customer based on their number of orders
