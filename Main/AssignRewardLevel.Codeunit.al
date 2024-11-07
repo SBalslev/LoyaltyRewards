@@ -14,23 +14,16 @@ codeunit 50100 AssignRewardLevel
         LatestRewardLevel: Code[30];
         Date: Date;
     begin
-        // Lock the customer table for modification. This is important to prevent conflicts with other processes,
-        // specially so that other processes don't modify the customer records while we're updating
-        // the reward level, so that's why we lock the whole table and not just the record when modifying.
         Customer.LockTable();
-
         // Reschedule the job if not allowed to run this day. This is because it's quite a heavy job
         // that and might interfere with other processes if run on certain days.
         RescheduleJobIfNotAllowed();
-
-        // Update the Reward table with external rewards, in addition to the default ones.
-        ImportExternalRewards();
-
         // Loop through all customers to update their reward level
         if Customer.FindSet() then begin
             repeat
-                // Do some clean up before processing the customer
-                ProcessCustomer();
+                // While we're looping, we can do some clean up before processing the customer. However, this doesn't
+                // need the lock.
+                ProcessCustomer(Customer);
                 // Get and assign the reward level to the customer based on their number of orders
                 Customer."Reward ID" := GetCustomerRewardLevel(Customer);
                 // Modify the customer record
@@ -45,7 +38,6 @@ codeunit 50100 AssignRewardLevel
     begin
         // Retrieve which days are not allowed to run the job from an external source.
         RetrieveDisAllowedDays(DisAllowedDays);
-
         // Reschedule the job if today is not allowed
         Date := Today();
         if DisAllowedDays.Contains(Date.DayOfWeek()) then
@@ -70,7 +62,6 @@ codeunit 50100 AssignRewardLevel
                 LatestRewardLevel := Reward."Reward ID";
             until Reward.Next() = 0;
         end;
-
         exit(LatestRewardLevel);
     end;
 
@@ -87,15 +78,10 @@ codeunit 50100 AssignRewardLevel
         JobQueueEntry.Insert(true);
     end;
 
-    procedure ProcessCustomer()
+    procedure RetrieveDisAllowedDays(var DisAllowedDays: List of [Enum DayOfTheWeek])
     begin
-        Sleep(2000);
-    end;
-
-    procedure RetrieveDisAllowedDays(var DisAllowedDays: List of [Integer])
-    begin
-        DisAllowedDays.Add(0);
-        DisAllowedDays.Add(6);
+        DisAllowedDays.Add(DayOfTheWeek::Monday);
+        DisAllowedDays.Add(DayOfTheWeek::Tuesday);
     end;
 
     procedure ImportExternalRewards()
@@ -112,23 +98,17 @@ codeunit 50100 AssignRewardLevel
         RewardRecord: Record "Reward";
         Execute: Boolean;
     begin
-
         ApiEndpoint := 'https://api.example.com/rewards';
         Sleep(1000);
-
         if Execute then begin
             // Make the API call
             HttpClient.Get(ApiEndpoint, HttpResponseMessage);
-            if not HttpResponseMessage.IsSuccessStatusCode() then
-                Error('Failed to retrieve rewards from external API.');
-
+            if not HttpResponseMessage.IsSuccessStatusCode() then Error('Failed to retrieve rewards from external API.');
             // Read the response content
             HttpResponseMessage.Content().ReadAs(JsonResponse);
-
             // Parse the JSON response
             if not JsonArray.ReadFrom(JsonResponse) then
                 Error('Failed to parse JSON response.');
-
             // Process each reward in the JSON array
             foreach JsonObject in JsonArray do begin
                 Sleep(100);
@@ -136,7 +116,11 @@ codeunit 50100 AssignRewardLevel
         end;
     end;
 
-    var
-        DisAllowedDays: List of [Integer];
+    procedure ProcessCustomer(c: Record Customer)
+    begin
+        Sleep(2000);
+    end;
 
+    var
+        DisAllowedDays: List of [Enum DayOfTheWeek];
 }
