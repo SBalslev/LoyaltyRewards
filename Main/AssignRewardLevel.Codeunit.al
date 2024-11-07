@@ -14,10 +14,12 @@ codeunit 50100 AssignRewardLevel
         LatestRewardLevel: Code[30];
         Date: Date;
     begin
-        Customer.LockTable();
         // Reschedule the job if not allowed to run this day. This is because it's quite a heavy job
         // that and might interfere with other processes if run on certain days.
         RescheduleJobIfNotAllowed();
+
+        Customer.LockTable();
+
         // Loop through all customers to update their reward level
         if Customer.FindSet() then begin
             repeat
