@@ -18,14 +18,19 @@ codeunit 50100 AssignRewardLevel
         // that and might interfere with other processes if run on certain days.
         RescheduleJobIfNotAllowed();
 
+        // Loop through all customers to process them
+        if Customer.FindSet() then begin
+            repeat
+                // Process the customer before locking the table
+                ProcessCustomer(Customer);
+            until Customer.Next() = 0;
+        end;
+
         Customer.LockTable();
 
         // Loop through all customers to update their reward level
         if Customer.FindSet() then begin
             repeat
-                // While we're looping, we can do some clean up before processing the customer. However, this doesn't
-                // need the lock.
-                ProcessCustomer(Customer);
                 // Get and assign the reward level to the customer based on their number of orders
                 Customer."Reward ID" := GetCustomerRewardLevel(Customer);
                 // Modify the customer record
