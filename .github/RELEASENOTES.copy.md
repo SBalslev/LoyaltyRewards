@@ -1,3 +1,537 @@
+## v9.0
+
+### Needs Context in Build job moved from environment variable to file
+
+`NeedsContext` is currently available as an environment variable in the build step of AL-Go. In some cases on repos with a large amount of projects, it's possible for this variable to exceed the max size GitHub allows for such variables. To work around this issue, we now place the contents of `NeedsContext` in a json file, where `NeedsContext` is the path to that file.
+
+If you have any custom processes that uses `NeedsContext`, those needs to be updated to now first read the contents of the json file. The structure of the json is identical to what was previously in the variable, so only extra step is to read the file.
+
+### Added support for workspace compilation
+
+With v28 of Business Central, the ALTool now also provides the ability to compile workspaces of apps. This has the added advantage that the ALTool can compute the dependency graph for the apps in the workspace and compile apps in parallel (if possible). For AL-Go projects with large amounts of apps that can save a lot of time. If you want to try this out you can enable it via the following setting
+
+```json
+  "workspaceCompilation": {
+    "enabled": true
+  }
+```
+
+By default apps are compiled sequentially but this can be changed via the parallelism property. This allows you to configure the maximum amount of parallel compilation processes. Set to 0 or -1 to use all available processors.
+
+```json
+  "workspaceCompilation": {
+    "enabled": true,
+    "parallelism": 4
+  }
+```
+
+### Test Projects — split builds and tests for faster feedback
+
+AL-Go now supports **test projects**: a new project type that separates test execution from compilation. A test project does not build any apps itself — instead it depends on one or more regular projects, installs the apps they produce, and runs tests against them.
+
+This lets you re-run tests without waiting for a full recompilation, and makes it easy to organize large repositories where builds and test suites have different scopes or cadences.
+
+**Getting started**
+
+Add a `projectsToTest` setting to the project-level `.AL-Go/settings.json` of an empty project (no `appFolders` or `testFolders`):
+
+```json
+{
+  "projectsToTest": ["build/projects/MyProject"]
+}
+```
+
+AL-Go will automatically:
+
+- Resolve the dependency so the test project always builds after its target project(s).
+- Install the Test Runner, Test Framework, and Test Libraries into the container.
+- Run all tests from the installed test apps.
+
+**Key rules**
+
+- A test project must **not** contain buildable code (no `appFolders`, `testFolders`, or `bcptTestFolders`). AL-Go will fail with a clear error if it detects both `projectsToTest` and buildable folders.
+- A test project cannot depend on another test project.
+- You can target multiple projects: `"projectsToTest": ["build/projects/ProjectA", "build/projects/ProjectB"]`.
+- Use full project paths as they appear in the repository.
+
+### Improving error detection and build reliability when downloading project dependencies
+
+The `DownloadProjectDependencies` action now downloads app files from URLs specified in the `installApps` and `installTestApps` settings upfront, rather than validating URLs at build time. This change provides:
+
+- Earlier detection of inaccessible or misconfigured URLs
+- Clearer error messages when secrets are missing or URLs are invalid
+- Warnings for potential issues like duplicate filenames
+
+### Improve overall performance by postponing projects with no dependants
+
+The time it takes to build projects can vary significantly depending on factors such as whether you are using Linux or Windows, Containers or CompilerFolders, and whether apps are being published or tests are being run.
+
+By default, projects are built according to their dependency order. As soon as all dependencies for a project are satisfied, the project is added to the next layer of jobs.
+
+The new setting `postponeProjectInBuildOrder` allows you to delay long running jobs (f.ex. test runs) with no dependants until the final layer of the build order. This can improve overall build performance by preventing subsequent layers from waiting on projects that take longer to complete but are not required for further dependencies.
+
+### Issues
+
+- Attempt to start docker service in case it is not running
+- NextMajor (v28) fails when downloading dependencies from NuGet-feed
+- Issue 2084 Multiple artifacts failure if you re-run failed jobs after flaky tests
+- Issue 2085 Projects that doesn't contain both Apps and TestApps are wrongly seen as not built.
+- Issue 2086 Postpone jobs, which doesn't have any dependents to the end of the build order.
+- Rework input handling of workflow 'Update AL-Go System Files' for trigger 'workflow_call'
+
+### New Settings
+
+- `postponeProjectInBuildOrder` is a new project setting, which will (if set to true) cause the project to be postponed until the last build job when possible. If set on test projects, then all tests can be deferred until all builds have succeeded.
+
+## v8.3
+
+### Issues
+
+- Issue 2107 Publish a specific build mode to an environment
+- Issue 1915 CICD fails on releases/26.x branch - '26.x' cannot be recognized as a semantic version string
+
+### The default pull request trigger is changing
+
+AL-Go for GitHub is transitioning from the pull_request_target trigger to the more secure pull_request trigger. This is a step we are taking to make AL-Go for GitHub more secure by default. If you are used to working from branches within the repository you may not notice any difference. If you get pull requests from forks, those pull requests will no longer be able to access secrets. If that is blocking for your repository, you will need to update your settings to use the pull_request_target trigger.
+
+**How do I revert back to pull_request_target?**
+
+Add the following setting to one of your settings files and run the Update AL-Go System Files workflow:
+
+```json
+  "pullRequestTrigger": "pull_request_target"
+```
+
+## v8.2
+
+### Issues
+
+- Issue 2095 DeliverToAppSource.ProductId needs to be specified (Library app)
+- Issue 2082 Sign action no longer fails when repository is empty or no artifacts are generated
+- Issue 2078 Workflows run since January 14th '26 have space before CI/CD removed
+- Issue 2070 Support public GitHub Packages feeds without requiring a Personal Access Token (PAT)
+- Issue 2004 PublishToAppSource workflow publishes multi-app repos in alphabetical order instead of dependency order
+- Issue 2045 DateTime parsing fails on non-US locale runners in WorkflowPostProcess.ps1
+- Issue 2055 When using versioningStrategy 3+16, you get an error when building
+- Issue 2094 PR into release branch gets wrong previous release
+- AL-Go repositories with large amounts of projects may run into issues with too large environment variables
+- Discussion 1855 Add trigger 'workflow_call' to workflow 'Update AL-Go System Files' for reusability
+- Issue 2050 Publish To Environment creates mistyped environment
+
+### Publish To Environment no longer creates unknown environments by default
+
+Previously, when running the "Publish To Environment" workflow with an environment name that doesn't exist in GitHub or AL-Go settings, the workflow would automatically create a new GitHub environment. This could lead to problems when environment names were mistyped, as the bogus environment would then cause subsequent CI/CD workflows to fail.
+
+Now, the workflow will fail with a clear error message if the specified environment doesn't exist. If you intentionally want to deploy to a new environment that hasn't been configured yet, you can check the **Create environment if it does not exist** checkbox when running the workflow.
+
+### Set default values for workflow inputs
+
+The `workflowDefaultInputs` setting now also applies to `workflow_call` inputs when an input with the same name exists for `workflow_dispatch`.
+This ensures consistent default values across both manual workflow runs and reusable workflow calls.
+
+Read more at [workflowDefaultInputs](https://aka.ms/algosettings#workflowDefaultInputs).
+
+### Merge queue support
+
+AL-Go now supports GitHub's merge queue feature out of the box! The `merge_group` trigger has been added to the Pull Request Build workflow, enabling seamless integration with merge queues. When you have the merge queue feature enabled in your repo, multiple PRs will automatically be validated together. Read more about merge queues [here](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue).
+
+> [!WARNING]
+> If you rely on a custom workflow for merge queue validation, you may need to adjust your setup to avoid duplicate builds.
+
+### AL-Go Telemetry updates
+
+AL-Go telemetry now includes test results so you can more easily see how many AL tests, Page Scripting tests and BCPT tests ran in your workflows across all your repositories. Documentation for this can be found on [this article](https://github.com/microsoft/AL-Go/blob/main/Scenarios/EnablingTelemetry.md) on enabling telemetry.
+
+## v8.1
+
+### Custom AL-Go files
+
+AL-Go for GitHub now supports updating files from your custom templates via the new `customALGoFiles` setting. Read more at [customALGoFiles](https://aka.ms/algosettings#customALGoFiles).
+
+### Set default values for workflow inputs
+
+A new setting `workflowDefaultInputs` allows you to configure default values for workflow_dispatch inputs. This makes it easier to run workflows manually with consistent settings across your team.
+
+When you add this setting to your AL-Go settings file and run the "Update AL-Go System Files" workflow, the default values will be automatically applied to the workflow YAML files in your repository.
+The default values must match the input types (boolean, number, string, or choice) defined in the workflow YAML files.
+
+Example configuration:
+
+```json
+{
+  "workflowDefaultInputs": [
+    { "name": "directCommit", "value": true },
+    { "name": "useGhTokenWorkflow", "value": true }
+  ]
+}
+```
+
+This setting can be used on its own in repository settings to apply defaults to all workflows with matching input names. Alternatively, you can use it within [conditional settings](https://aka.ms/algosettings#conditional-settings) to apply defaults only to specific workflows, branches, or other conditions.
+
+Example using conditional settings to target specific workflows:
+
+```json
+{
+  "conditionalSettings": [
+    {
+      "workflows": ["Create Release"],
+      "settings": {
+        "workflowDefaultInputs": [
+          { "name": "directCommit", "value": true },
+          { "name": "releaseType", "value": "Prerelease" }
+        ]
+      }
+    }
+  ]
+}
+```
+
+**Important:** When multiple conditional settings blocks match and both define `workflowDefaultInputs`, the arrays are merged following AL-Go's standard behavior for complex setting types (all entries are kept). If the same input name appears in multiple entries, the last matching entry takes precedence.
+
+Read more at [workflowDefaultInputs](https://aka.ms/algosettings#workflowDefaultInputs).
+
+### Issues
+
+- Issue 2039 Error when deploy to environment: NewTemporaryFolder is not recognized
+- Issue 1961 KeyVault access in PR pipeline
+- Discussion 1911 Add support for reportSuppressedDiagnostics
+- Discussion 1968 Parameter for settings passed to CreateDevEnv
+- Issue 1945 Deploy Reference Documentation fails for CI/CD
+- Use Runner_Temp instead of GetTempFolder whenever possible
+- Issue 2016 Running Update AL-Go system files with branches wildcard `*` tries to update _origin_
+- Issue 1960 Deploy Reference Documentation fails
+- Discussion 1952 Set default values on workflow_dispatch input
+
+### Deprecations
+
+- `unusedALGoSystemFiles` will be removed after October 1st 2026. Please use [`customALGoFiles.filesToExclude`](https://aka.ms/algosettings#customALGoFiles) instead.
+
+## v8.0
+
+### Mechanism to overwrite complex settings type
+
+By default, AL-Go merges settings from various places (see [settings levels](https://aka.ms/algosettings#where-are-the-settings-located)). Basic setting types such as `string` and `integer` are overwritten, but settings with complex types such as `array` and `object` are merged.
+
+However, sometimes it is useful to avoid merging complex types. This can be achieved by specifying `overwriteSettings` property on a settings object. The purpose of the property is to list settings, for which the value will be overwritten, instead of merged. Read more at [overwriteSettings property](https://aka.ms/algosettings#overwriteSettings)
+
+### AL Code Analysis tracked in GitHub
+
+AL-Go already supports AL code analysis, but up until now this was not tracked in GitHub. It is now possible to track code analysis issues automatically in the GitHub security tab, as well as having any new issues posted as a comment in Pull Requests.
+
+Enable this feature by using the new setting [trackALAlertsInGithub](https://aka.ms/algosettings#trackALAlertsInGithub). This setting must be enabled at the repo level, but can optionally be disabled per project.
+
+Please note that some automated features are premium and require the use of [GitHub Code Security](https://docs.github.com/en/get-started/learning-about-github/about-github-advanced-security)
+
+### Issues
+
+- Discussion 1885 Conditional settings for CI/CD are not applied
+- Discussion 1899 Remove optional properties from "required" list in settings.schema.json
+- Issue 1905 AL-Go system files update fails (Get Workflow Multi-Run Branches action fails when there are tags with same value but different casing)
+- Issue 1926 Deployment fails when using build modes
+- Issue 1898 GetDependencies in localDevEnv does not fallback to github token
+- Issue 1947 Project settings are ignored when loading bccontainerhelper
+- Issue 1937 trackALAlertsInGitHub is failing in preview
+- DeployTo settings from environment-specific AL-Go settings are not applied when deploying
+- `ReadSettings` action outputs too much information that is mainly used for debugging
+
+## v7.3
+
+### Configurable merge method for pull request auto-merge
+
+A new setting `pullRequestMergeMethod` has been added to the `commitOptions` structure, allowing you to configure which merge method to use when `pullRequestAutoMerge` is enabled. Valid values are "merge" or "squash". The default value is "squash" to maintain backward compatibility.
+
+Example
+
+```json
+{
+  "commitOptions": {
+    "pullRequestAutoMerge": true,
+    "pullRequestMergeMethod": "merge"
+  }
+}
+```
+
+### AL-Go Telemetry
+
+AL-Go now offers a dataexplorer dashboard to get started with AL-Go telemetry. Additionally, we've updated the documentation to include a couple of kusto queries if you would rather build your own reports.
+
+### Support for AL-Go settings as GitHub environment variable: ALGoEnvironmentSettings
+
+AL-Go settings can now be defined in GitHub environment variables. To use this feature, create a new variable under your GitHub environment called `ALGoEnvironmentSettings`. Please note that this variable should not include your environment name.
+
+Settings loaded this way, will only be available during the Deploy step of the CI/CD or Publish to Environment actions, but not the Build step, making it most suitable for the [DeployTo setting](https://aka.ms/algosettings#deployto). Settings defined in this variable will take priority over any setting defined in AL-Go repo, org or settings files.
+
+The contents of the variable should be a JSON block, similar to any other settings file or variable. When defining the `DeployTo\<EnvName>` setting in this variable, it should still include the environment name. Eg:
+
+```
+{
+  DeployToProduction {
+    "Branches": [
+        "*"
+    ],
+    "includeTestAppsInSandboxEnvironment": false,
+    "excludeAppIds": [ 1234 ]
+  }
+}
+```
+
+Please note, that due to certain security limitations, the properties `runs-on`, `shell` and `ContinousDeployment` of the `DeployTo` setting will <ins>**NOT**</ins> be respected if defined in a GitHub environment variable. To use these properties, please keep them defined elsewhere, such as your AL-Go settings file or Org/Repo settings variables.
+
+### Issues
+
+- Issue 1770 Wrong type of _projects_ setting in settings schema
+- Issue 1787 Publish to Environment from PR fails in private repos
+- Issue 1722 Check if apps are already installed on a higher version before deploying
+- Issue 1774 Increment Version Number with +0.1 can increment some version numbers twice
+- Issue 1837 Deployment from PR builds fail if PR branch name includes forward slashes (e.g., `feature/branch-name`).
+- Issue 1852 Page Scripting Tests are not added to build summary
+- Issue 1829 Added custom jobs cannot be removed
+- Idea 1856 Include workflow name as input for action ReadSetting
+
+### Additional debug logging functionality
+
+We have improved how logging is handled in AL-Go, and now make better use of GitHub built-in extended debug logging functionality. Extended debug logging can be enabled when re-running actions by clicking the 'Enable debug logging' checkbox in the pop-up window. This can be done both for jobs that failed and jobs that succeeded, but did not produce the correct result.
+
+### Add custom jobs to AL-Go workflows
+
+It is now possible to add custom jobs to AL-Go workflows. The Custom Job needs to be named `CustomJob<something>` and should be placed after all other jobs in the .yaml file. The order of which jobs are executed is determined by the Needs statements. Your custom job will be executed after all jobs specified in the Needs clause in your job and if you need the job to be executed before other jobs, you should add the job name in the Needs clause of that job. See [https://aka.ms/algosettings#customjobs](https://aka.ms/algosettings#customjobs) for details.
+
+Note that custom jobs might break by future changes to AL-Go for GitHub workflows. If you have customizations to AL-Go for GitHub workflows, you should always doublecheck the pull request generated by Update AL-Go System Files.
+
+### Support for Custom AL-Go template repositories
+
+Create an AL-Go for GitHub repository based on [https://aka.ms/algopte](https://aka.ms/algopte) or [https://aka.ms/algoappsource](https://aka.ms/algoappsource), add custom workflows, custom jobs and/or settings to this repository and then use that repository as the template repository for other repositories. Using custom template repositories allows you to create and use highly customized template repositories and control the uptake of this in all repositories. See [https://aka.ms/algosettings#customtemplate](https://aka.ms/algosettings#customtemplate) for details.
+
+> [!NOTE]
+> Customized repositories might break by future changes to AL-Go for GitHub. If you are customizing AL-Go for GitHub, you should always double-check the pull request when updating AL-Go system files in your custom template repositories.
+
+## v7.2
+
+### Removed functionality
+
+As stated in [AL-Go Deprecations](https://aka.ms/algodeprecations#cleanModePreprocessorSymbols), setting `cleanModePreprocessorSymbols` is no longer supported and will be ignored by AL-Go for GitHub.
+
+### Security
+
+- Add top-level permissions for _Increment Version Number_ workflow
+
+### Issues
+
+- Issue 1697 Error in CheckForUpdates: "Internet Explorer engine is not available" when using self-hosted runners
+- Issue 1685 HttpError: Resource not accessible by integration
+- Issue 1757 Error when signing apps with key vault signing
+
+### Workflow input validation
+
+Some workflow inputs are now validated early in order to avoid workflows to make modifications like creating a release, when we already should know that an error will occur later.
+
+### Test settings against a JSON schema
+
+AL-Go for GitHub settings now has a schema. The following line is added at the beginning to any AL-Go settings files to utilize the schema:
+
+```
+"$schema": "https://raw.githubusercontent.com/microsoft/AL-Go-Actions/<version>/Actions/settings.schema.json"
+```
+
+### Failing pull requests if new warnings are added
+
+By setting failOn to 'newWarning', pull requests will fail if new warnings are introduced. This feature compares the warnings in the pull request build against those in the latest successful CI/CD build and fails if new warnings are detected.
+
+### AL-Go Telemetry
+
+Now AL-Go telemetry also logs `ActionDuration` which makes it possible to track the duration of the different steps in the AL-Go workflows (e.g. RunPipeline or Sign)
+
+## v7.1
+
+### Issues
+
+- Issue 1678 Test summary is showing too many status icons
+- Issue 1640 AL1040 error due to app folder within the artifacts cache being incorrectly recognized as an app folder
+- Issue 1630 Error when downloading a release, when the destination folder already exists.
+- Issue 1540 and 1649 Apps with dependencies to Microsft\_\_EXCLUDE\_ apps fails deployment
+- Issue 1547 Dependencies will be installed even if DependencyInstallMode is ignore, but dependencies will never be installed on production environments
+- Issue 1654 GithubPackageContext does not work together with private trustedNuGetFeeds
+- Issue 1627 AL-Go should throw an error or a warning if you create a release, which is older than the latest release
+- Issue 1657 When no files modified on Git, deployment fails
+- Issue 1530 Dependency Field Service Integration does not get published in container while Installing apps
+- Issue 1644 Support for AppAuth when using a private Template repository from another organization
+- Issue 1669 GitHub App authentication to download dependencies from private repositories
+- Issue 1478 Rate Limit Exceeded when running Update AL-Go System files
+
+## v7.0
+
+### Issues
+
+- Issue 1519 Submitting to AppSource WARNING: AuthContext.Scopes is .. should be
+- Issue 1521 Dependencies not installed for multi project incremental PR build
+- Issue 1522 Strange warnings in Deploy job post update to AL-Go 6.4
+- BcContainerHelper settings were only read from .github/AL-Go-Settings.json, not allowing global settings in ALGoOrgSettings for TrustedNuGetFeeds, MemoryLimit and other things that should be possible to define globally
+- Issue 1526 When updating AL-Go system files, the update process (creating a PR or directly pushing to the branch) fails when there is a file or directory in the repo with the same name as the branch that is to be updated
+- Legacy code signing stopped working
+
+### Page Scripting visualizer
+
+Page scripting tests have been available for AL-Go for GitHub for a while but required manual inspection of the Page scripting artifact to see the results. It is now possible to get a quick overview in the job summary section of a CICD build, similar to how regular and bcpt test results are displayed.
+
+No new settings are required. Test results will automatically be displayed if tests are enabled via the existing setting [pageScriptingTests](https://aka.ms/algosettings#pageScriptingTests).
+
+### Support for deploying to sandbox environments from a pull request
+
+AL-Go for GitHub now supports deploying from a PR. When using the 'Publish To Environment' workflow, it is now possible to input 'PR_X' as the App version, where 'X' is the PR Id. This will deploy the artifacts from the latest PR build to the chosen environment, if that build is completed and successful.
+
+All apps, which were not built by the PR build will be deployed from the last known good build. You can find a notification on the PR build explaining which build is used as the last known good build.
+
+> [!NOTE]
+> When deploying a PR build to a sandbox environment, the app will get a special version number, which is: major.minor.maxint.run-number. This means that the sandbox environment likely needs to be deleted after the testing has ended.
+
+## v6.4
+
+### Deprecations
+
+- `alwaysBuildAllProjects` will be removed after October 1st 2025. Please set the `onPull_Request` property of the `incrementalBuilds` setting to false to force full builds in Pull Requests.
+- `<workflow>Schedule` will be removed after October 1st 2025. The old setting, where the setting key was a combination of the workflow name and `Schedule` (dynamic setting key name) is deprecated. Instead you need to use a setting called [workflowSchedule](https://aka.ms/algosettings#workflowSchedule) and either use [Conditional Settings](https://aka.ms/algosettings#conditional-settings) or place the setting in a workflow specific settings file.
+
+### Issues
+
+- Issue 1433 Publish to Environment - DependencyInstallMode not found
+- Issue 1440 Create Release fails due to recent changes to the AL-Go
+- Issue 1330 CompilerFolder doesn't transfer installed Apps to NuGet resolution
+- Issue 1268 Do not throw an un-understandable error during nuGet download
+- Performance test sample code in 25.4 contains objects with ID 149201 and 149202, which are not renumbered
+- Issue 798 Publish To Environment breaks CI/CD pipelines
+- Issue 1182 Runs-on setting type is ambiguous - string or array
+- Issue 1502 NuGet dependency version is always LatestMatching
+
+### New Workflow specific settings
+
+- `workflowSchedule` - can be structure with a property named `cron`, which must be a valid crontab, defining the CRON schedule for when the specified workflow should run. Default is no scheduled runs, only manual triggers. Build your crontab string here: [https://crontab.guru](https://crontab.guru). You need to run the Update AL-Go System Files workflow for the schedule to take effect.<br/>**Note:** If you configure a WorkflowSchedule for the CI/CD workflow, AL-Go will stop triggering CICDs on push unless you have also added CICDPushBranches to your settings.<br/>**Note also:** If you define a schedule for Update AL-Go System Files, it uses direct Commit instead of creating a PR.
+- `workflowConcurrency` - is used to control concurrency of workflows. Like with the `workflowSchedule` setting, this setting should be applied in workflow specific settings files or conditional settings. By default, all workflows allows for concurrency, except for the Create Release workflow. If you are using incremental builds in CI/CD it is also recommented to set WorkflowConcurrency to:<br/>`[ "group: ${{ github.workflow }}-${{ github.ref }}", "cancel-in-progress: true" ]`<br />in order to cancel prior incremental builds on the same branch.<br />Read more about workflow concurrency [here](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/control-the-concurrency-of-workflows-and-jobs).
+
+### New Repository Settings
+
+- `nuGetFeedSelectMode` determines the select mode when finding Business Central app packages from NuGet feeds, based on the dependency version specified in app.json. Options are: `Earliest` for earliest version of the package, `EarliestMatching` for earliest version of the package also compatible with the Business Central version used, `Exact` for the exact version of the package, `Latest` for the latest version of the package, `LatestMatching` for the latest version of the package also compatible with the Business Central version used.
+- `deployTo<environment>` now has two additional properties:
+  - `includeTestAppsInSandboxEnvironment`, which deploys test apps and their dependencies to the specified sandbox environment if set to `true`. Deployment will fail if used on a Prod environment or if the test app has a dependency on Tests-TestLibraries. Default value is `false`.
+  - `excludeAppIds`, which is an array of app ids which will be excluded from deployment. Default value is `[]`
+- `incrementalBuilds` - is a structure defining how you want AL-Go to handle incremental builds. When using incremental builds for a build, AL-Go will look for the latest successful build, newer than the defined `retentionDays` and only rebuild projects or apps (based on `mode`) which needs to be rebuilt. Properties in the structure includes:
+  - `onPush` - set this property to **true** in order to enable incremental builds in CI/CD triggered by a merge/push event. Default is **false**.
+  - `onPull_Request` - set this property to **false** in order to disable incremental builds in Pull Request workflows. Default is **true**.
+  - `onSchedule` - set this property to **true** in order to enable incremental builds in CI/CD when running on a schedule. Default is **false**.
+  - `retentionDays` - number of days a successful build is good (and can be used for incremental builds). Default is **30**.
+  - `mode` - defines the mode for incremental builds. Currently, two values are supported. Use **modifiedProjects** when you want to rebuild all apps in modified projects and depending projects or **modifiedApps** if you only want to rebuild modified apps and depending apps.
+
+> [!NOTE]
+> The projects mentioned here are AL-Go projects in a multi-project repository. A repository can contain multiple projects and a project can contain multiple apps.
+
+### Run "Update AL-Go System Files" on multiple branches
+
+_Update AL-Go System Files_ has a new input to specify a list of branches to be updated in a single workflow run.
+When running the workflow on a schedule, you can now also specify `includeBranches` in `workflowSchedule` setting, which allows you to update the specified branches. Read more at https://aka.ms/algosettings#workflowSchedule.
+
+> [!NOTE]
+> When running "Update AL-Go System Files" on multiple branches, the template repository URL will be determined based on the branch the workflow runs on and it will be used for all of the specified branches.
+
+### Support for incremental builds
+
+AL-Go for GitHub now supports incremental builds, which means that unchanged projects or apps will be reused from the previous good build. Read [this](https://aka.ms/algosettings#incrementalBuilds) to learn more.
+
+> [!NOTE]
+> When using incremental builds it is recommended to also set `workflowConcurrency` as defined [here](https://aka.ms/algosettings#workflowConcurrency).
+
+### Support for GitHub App authentication
+
+AL-Go for GitHub now supports using a GitHub App specification as the GhTokenWorkflow secret for a more secure way of allowing repositories to run Update AL-Go System Files and other workflows which are creating commits and pull requests. See [this description](https://github.com/microsoft/AL-Go/blob/main/Scenarios/GhTokenWorkflow.md) to learn how to use GitHub App authentication.
+
+### Support for embedded secrets in installApps and installTestApps settings
+
+If your installApps or installTestApps are secure URL, containing a secret token, you can now use a GitHub secret specification as part of or as the full URL of apps to install. An example could be:
+
+`"installApps": [ "https://www.dropbox.com/${{SECRETNAME}}&dl=1" ]`
+
+Which would hide the secret part of your URL instead of exposing it in clear text.
+
+## v6.3
+
+### Deprecations
+
+- `cleanModePreprocessorSymbols` will be removed after April 1st 2025. Use [Conditional Settings](https://aka.ms/algosettings#conditional-settings) instead, specifying buildModes and the `preprocessorSymbols` setting. Read [this](https://aka.ms/algodeprecations#cleanModePreprocessorSymbols) for more information.
+
+### Issues
+
+- It is now possible to skip the modification of dependency version numbers when running the Increment Version number workflow or the Create Release workflow
+
+### New Repository Settings
+
+- [`shortLivedArtifactsRetentionDays`](https://aka.ms/algosettings#shortLivedArtifactsRetentionDays) determines the number of days to keep short lived build artifacts (f.ex build artifacts from pull request builds, next minor or next major builds). 1 is default. 0 means use GitHub default.
+- [`preProcessorSymbols`](https://aka.ms/algosettings#preProcessorSymbols) is a list of preprocessor symbols to use when building the apps. This setting can be specified in [workflow specific settings files](https://aka.ms/algosettings#where-are-the-settings-located) or in [conditional settings](https://aka.ms/algosettings#conditional-settings).
+
+### New Versioning Strategy
+
+Setting versioning strategy to 3 will allow 3 segments of the version number to be defined in app.json and repoVersion. Only the 4th segment (Revision) will be defined by the GitHub [run_number](https://go.microsoft.com/fwlink/?linkid=2217416&clcid=0x409) for the CI/CD workflow. Increment version number and Create Release now also supports the ability to set a third segment to the RepoVersion and appversion in app.json.
+
+### Change in published artifacts
+
+When using `useProjectDependencies` in a multi-project repository, AL-Go for GitHub used to generate short lived build artifacts called `thisBuild-<projectnaame>-<type>-...`. This is no longer the case. Instead, normal build artifacts will be published and used by depending projects. The retention period for the short lived artifacts generated are controlled by a settings called [`shortLivedArtifactsRetentionDays`](https://aka.ms/algosettings#shortLivedArtifactsRetentionDays).
+
+### Preprocessor symbols
+
+It is now possible to define preprocessor symbols, which will be used when building your apps using the [`preProcessorSymbols`](https://aka.ms/algosettings#preProcessorSymbols) setting. This setting can be specified in workflow specific settings file or it can be used in conditional settings.
+
+## v6.2
+
+### Issues
+
+- Issue 1296 Make property "appFolders" optional
+- Issue 1344 Experimental feature "git submodules" seems to be a breaking change
+- Issue 1305 Extra telemetry Property RepositoryOwner and RepositoryName¨
+- Add RunnerEnvironment to Telemetry
+- Output a notice, not a warning, when there are no available updates for AL-Go for GitHub
+
+### New Repository Settings
+
+- `useGitSubmodules` can be either `true` or `recursive` if you want to enable Git Submodules in your repository. If your Git submodules resides in a private repository, you need to create a secret called `gitSubmodulesToken` containing a PAT with access to the submodule repositories. Like with all other secrets, you can also create a setting called `gitSubmodulesTokenSecretName` and specify the name of another secret, with these permissions (f.ex. ghTokenWorkflow).
+- `commitOptions` - is a structure defining how you want AL-Go to handle automated commits or pull requests coming from AL-Go (e.g. for Update AL-Go System Files). The structure contains the following properties
+  - `messageSuffix` : A string you want to append to the end of commits/pull requests created by AL-Go. This can be useful if you are using the Azure Boards integration (or similar integration) to link commits to workitems.
+  - `pullRequestAutoMerge` : A boolean defining whether you want AL-Go pull requests to be set to auto-complete. This will auto-complete the pull requests once all checks are green and all required reviewers have approved.
+  - `pullRequestLabels` : A list of labels to add to the pull request. The labels need to be created in the repository before they can be applied.
+
+### Support for Git submodules
+
+In v6.1 we added experimental support for Git submodules - this did however only work if the submodules was in a public repository. In this version, you can use the `useGitSubmodules` setting to control whether you want to use Git Submodules and the `gitSubmodulesToken` secret to allow permission to read these repositories.
+
+## v6.1
+
+### Issues
+
+- Issue 1241 Increment Version Number might produce wrong app.json
+- When auto discovering appFolders, testFolders and bcptTestFolders - if a BCPT Test app has a dependency to a test framework app, it is added to testFolders as well as bcptTestFolders and will cause a failure.
+
+### New Project Settings
+
+- `pageScriptingTests` should be an array of page scripting test file specifications, relative to the AL-Go project. Examples of file specifications: `recordings/my*.yml` (for all yaml files in the recordings subfolder matching my\*.yml), `recordings` (for all \*.yml files in the recordings subfolder) or `recordings/test.yml` (for a single yml file)
+- `doNotRunPageScriptingTests` can force the pipeline to NOT run the page scripting tests specified in pageScriptingTests. Note this setting can be set in a [workflow specific settings file](#where-are-the-settings-located) to only apply to that workflow
+- `restoreDatabases` should be an array of events, indicating when you want to start with clean databases in the container. Possible events are: `BeforeBcpTests`, `BeforePageScriptingTests`, `BeforeEachTestApp`, `BeforeEachBcptTestApp`, `BeforeEachPageScriptingTest`
+
+### New Repository Settings
+
+- `trustedSigning` is a structure defining `Account`, `EndPoint` and `CertificateProfile` if you want to use trusted signing. Note that your Azure_Credentials secret (Microsoft Entra ID App or Managed identity) still needs to provide access to your azure subscription and be assigned the `Trusted Signing Certificate Profile Signer` role in the Trusted Signing Account.
+- `deployTo<environment>` now has an additional property called DependencyInstallMode, which determines how dependencies are deployed if GenerateDependencyArtifact is true. Default value is `install` to install dependencies if not already installed. Other values are `ignore` for ignoring dependencies, `upgrade` for upgrading dependencies if possible and `forceUpgrade` for force upgrading dependencies.
+
+### Support for Azure Trusted Signing
+
+Read https://learn.microsoft.com/en-us/azure/trusted-signing/ for more information about Trusted Signing and how to set it up. After setting up your trusted signing account and certificate profile, you need to create a setting called [trustedSigning](https://aka.ms/algosettings#trustedSigning) for AL-Go to sign your apps using Azure Trusted Signing.
+
+### Support for Page Scripting Tests
+
+Page Scripting tests are now supported as part of CI/CD. By specifying pageScriptingTests in your project settings file, AL-Go for GitHub will automatically run these page scripting tests as part of your CI/CD workflow, generating the following build artifacts:
+
+- `PageScriptingTestResults` is a JUnit test results file with all results combined.
+- `PageScriptingTestResultDetails` are the detailed test results (including videos) when any of the page scripting tests have failures. If the page scripting tests succeed - the details are not published.
+
+### Experimental support for Git submodule
+
+[Git submodule](https://git-scm.com/book/en/v2/Git-Tools-Submodules) is now supported as part of CI/CD on your project.
+
 ## v6.0
 
 ### Issues
@@ -54,7 +588,7 @@ In the summary after a Test Run, you now also have the result of performance tes
 ### Support Ubuntu runners for all AL-Go workflows
 
 Previously, the workflows "Update AL-Go System Files" and "TroubleShooting" were hardcoded to always run on `windows-latest` to prevent deadlocks and security issues.
-From now on, `ubuntu-lates` will also be allowed for these mission critical workflows, when changing the `runs-on` setting. Additionally, only the value `pwsh` for `shell` setting is allowed when using `ubuntu-latest` runners.
+From now on, `ubuntu-latest` will also be allowed for these mission critical workflows, when changing the `runs-on` setting. Additionally, only the value `pwsh` for `shell` setting is allowed when using `ubuntu-latest` runners.
 
 ### Updated AL-Go telemetry
 
@@ -75,7 +609,7 @@ AL-Go for GitHub now includes a new telemetry module. For detailed information o
   - **NumberOfSqlStmtsWarning** - a warning is issued if the number of SQL statements from a bcpt test increases more than this percentage (default 5)
   - **NumberOfSqlStmtsError** - an error is issued if the number of SQL statements from a bcpt test increases more than this percentage (default 10)
 
-> \[!NOTE\]
+> [!NOTE]
 > Duration thresholds are subject to varying results depending on the performance of the agent running the tests. Number of SQL statements executed by a test is often the most reliable indicator of performance degredation.
 
 ## v5.2
@@ -102,7 +636,7 @@ AL-Go for GitHub now includes a new telemetry module. For detailed information o
 - **Pull PowerPlatform Changes** for pulling changes from your PowerPlatform development environment into your AL-Go for GitHub repository
 - **Push PowerPlatform Changes** for pushing changes from your AL-Go for GitHub repository to your PowerPlatform development environment
 
-> \[!NOTE\]
+> [!NOTE]
 > PowerPlatform workflows are only available in the PTE template and will be removed if no PowerPlatformSolutionFolder is defined in settings.
 
 ### New Scenarios (Documentation)
@@ -112,7 +646,7 @@ AL-Go for GitHub now includes a new telemetry module. For detailed information o
 - [Try one of the Business Central and Power Platform samples](https://github.com/microsoft/AL-Go/blob/main/Scenarios/TryPowerPlatformSamples.md)
 - [Publish To AppSource](https://github.com/microsoft/AL-Go/blob/main/Scenarios/PublishToAppSource.md)
 
-> \[!NOTE\]
+> [!NOTE]
 > PowerPlatform functionality are only available in the PTE template.
 
 ## v5.1
@@ -250,8 +784,8 @@ AL-Go for GitHub allows you to build and test using insider builds without any e
 
 - `enableExternalRulesets`: set this setting to true if you want to allow AL-Go to automatically download external references in rulesets.
 - `deliverTo<deliveryTarget>`: is not really new, but has new properties and wasn't documented. The complete list of properties is here (note that some properties are deliveryTarget specific):
-  - **Branches** = an array of branch patterns, which are allowed to deliver to this deliveryTarget. (Default \[ "main" \])
-  - **CreateContainerIfNotExist** = *\[Only for DeliverToStorage\]* Create Blob Storage Container if it doesn't already exist. (Default false)
+  - **Branches** = an array of branch patterns, which are allowed to deliver to this deliveryTarget. (Default [ "main" ])
+  - **CreateContainerIfNotExist** = *[Only for DeliverToStorage]* Create Blob Storage Container if it doesn't already exist. (Default false)
 
 ### Deployment
 
@@ -292,7 +826,7 @@ Earlier, you could also specify the projects you want to deploy to an environmen
 - `deployTo<environmentName>`: is not really new, but has new properties. The complete list of properties is here:
   - **EnvironmentType** = specifies the type of environment. The environment type can be used to invoke a custom deployment. (Default SaaS)
   - **EnvironmentName** = specifies the "real" name of the environment if it differs from the GitHub environment
-  - **Branches** = an array of branch patterns, which are allowed to deploy to this environment. (Default \[ "main" \])
+  - **Branches** = an array of branch patterns, which are allowed to deploy to this environment. (Default [ "main" ])
   - **Projects** = In multi-project repositories, this property can be a comma separated list of project patterns to deploy to this environment. (Default \*)
   - **SyncMode** = ForceSync if deployment to this environment should happen with ForceSync, else Add. If deploying to the development endpoint you can also specify Development or Clean. (Default Add)
   - **ContinuousDeployment** = true if this environment should be used for continuous deployment, else false. (Default: AL-Go will continuously deploy to sandbox environments or environments, which doesn't end in (PROD) or (FAT)
@@ -350,8 +884,8 @@ Now, you can set the checkbox called Use GhTokenWorkflow to allowing you to use 
 
 ### New Settings
 
-- `keyVaultCodesignCertificateName`:  With this setting you can delegate the codesigning to an Azure Key Vault. This can be useful if your certificate has to be stored in a Hardware Security Module
-- `PullRequestTrigger`:  With this setting you can set which trigger to use for Pull Request Builds. By default AL-Go will use pull_request_target.
+- `keyVaultCodesignCertificateName`: With this setting you can delegate the codesigning to an Azure Key Vault. This can be useful if your certificate has to be stored in a Hardware Security Module
+- `PullRequestTrigger`: With this setting you can set which trigger to use for Pull Request Builds. By default AL-Go will use pull_request_target.
 
 ### New Actions
 
@@ -547,7 +1081,7 @@ In the latest version, we always use LF as line seperator, UTF8 without BOM and 
 ### Experimental Support
 
 Setting the repo setting "shell" to "pwsh", followed by running Update AL-Go System Files, will cause all PowerShell code to be run using PowerShell 7 instead of PowerShell 5. This functionality is experimental. Please report any issues at https://github.com/microsoft/AL-Go/issues
-Setting the repo setting "runs-on" to "Ubuntu-Latest", followed by running Update AL-Go System Files, will cause all non-build jobs to run using Linux. This functionality is experimental. Please report any issues at https://github.com/microsoft/AL-Go/issues
+Setting the repo setting "runs-on" to "Ubuntu-latest", followed by running Update AL-Go System Files, will cause all non-build jobs to run using Linux. This functionality is experimental. Please report any issues at https://github.com/microsoft/AL-Go/issues
 
 ## v2.2
 
@@ -591,7 +1125,7 @@ Setting the repo setting "runs-on" to "Ubuntu-Latest", followed by running Updat
 ### Issues
 
 - Issue #143 Commit Message for **Increment Version Number** workflow
-- Issue #160 Create local DevEnv aith appDependencyProbingPaths
+- Issue #160 Create local DevEnv with appDependencyProbingPaths
 - Issue #156 Versioningstrategy 2 doesn't use 24h format
 - Issue #155 Initial Add existing app fails with "Cannot find path"
 - Issue #152 Error when loading dependencies from releases
@@ -648,7 +1182,7 @@ Setting the repo setting "runs-on" to "Ubuntu-Latest", followed by running Updat
 ### CI/CD and Publish To New Environment
 
 - Base functionality for selecting a specific GitHub runner for an environment
-- Include dependencies artifacts when deploying (if generateDependencyArtifacts is true)
+- Include dependencies artifacts when deploying (if generateDependencyArtifact is true)
 
 ### localDevEnv.ps1 and cloudDevEnv.ps1
 
